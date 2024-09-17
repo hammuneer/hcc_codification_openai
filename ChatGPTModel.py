@@ -54,6 +54,7 @@ def get_codification(system_prompt, sample_user_prompt):
     try: 
         response = client.chat.completions.create(
             model="gpt-4o",
+          temperature = 0.7,
             messages=[
             {"role": "system", "content":system_prompt},
             {"role": "user", "content": sample_user_prompt}
