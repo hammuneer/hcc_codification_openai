@@ -238,7 +238,8 @@ def parse_codified_output_to_table(codified_note):
         
         # Convert it into a pandas DataFrame
         df = pd.DataFrame(data)
-        
+        # reset the index and add 1 to each value
+        df.index = df.index + 1
         return df
     except json.JSONDecodeError:
         return None
