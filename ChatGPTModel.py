@@ -1,302 +1,102 @@
 import streamlit as st
-from openai import OpenAI
-import pandas as pd
-import json
+from llama_index.core.llms import ChatMessage
+from llama_index.llms.openai import OpenAI
+# Replace this with your actual OpenAI API key
+openai_api_key = """***REMOVED-OPENAI-KEY***"""
 
-
-system_prompt= """
-Context:
-You are an advanced AI model designed to assist with medical coding, specifically focusing on Hierarchical Condition Categories (HCC) and risk adjustment. Your primary role is to accurately identify and assign HCC and corresponding ICD codes based on medical records, considering all relevant risk adjustment factors. You must comply with CMS guidelines and ensure high accuracy and efficiency in coding. Analyze and apply the information in the attached Excel file and all other documents.
-Instructions:
-
-•              Task: Analyze the given medical records and assign appropriate HCC and ICD codes.
-•              Considerations:
-o             Identify and code all relevant diagnoses.
-o             Take into account risk adjustment factors such as patient age, gender, comorbidities, and socio-economic status.
-o             Ensure compliance with CMS guidelines for HCC coding and risk adjustment.
-•              Output: Provide a concise table in consistent format that includes the assigned HCC and ICD codes
-
-
-Examples:
-Example 1:
-Medical Record:
-Patient: [Patient Name]
-Age: [Patient Age]
-Gender: Female
-Medical History: Type 2 Diabetes Mellitus (DM), Hypertension, Chronic Kidney Disease (CKD) Stage 4, Diabetic Foot Ulcers
-Recent Visit: 3-month follow-up for type 2 DM; concerns about a toe ulcer on the right foot, reduced sensation in lower extremities, and continued smoking (1.5 packs/day).
-
-Clinical Assessment:
-Ulcer on right toe, 1 cm, limited to skin breakdown, does not probe to bone.
-Type 2 Diabetes Mellitus.
-Hypertension.
-CKD Stage 4.
-Reduced sensation in lower extremities – possible diabetic peripheral neuropathy.
-Continued smoker, cigarettes, approximately 1.5 packs a day.
-
-
-Diagnosis Codes:
-E11.621: Type 2 diabetes mellitus with foot ulcer
-L97.511: Non-pressure chronic ulcer of other part of right foot limited to breakdown of skin
-E11.22: Type 2 diabetes mellitus with diabetic chronic kidney disease
-I12.9: Hypertensive chronic kidney disease with stage 1 through stage 4 chronic kidney disease, or unspecified chronic kidney disease
-N18.4: Chronic kidney disease, stage 4 (severe)
-F17.210: Nicotine dependence, cigarettes, uncomplicated
-R20.8: Other disturbances of skin sensation
-
- 
-
-Response:
-Assigned HCC Codes:
-HCC 18: Diabetes with Chronic Complications
-HCC 85: Hypertension
-HCC 136: Chronic Kidney Disease (Stage 4)
-HCC 108: Vascular Disease
-
-Assigned ICD Codes:
-E11.621: Type 2 diabetes mellitus with foot ulcer
-L97.511: Non-pressure chronic ulcer of other part of right foot limited to breakdown of skin
-E11.22: Type 2 diabetes mellitus with diabetic chronic kidney disease
-I12.9: Hypertensive chronic kidney disease with stage 1 through stage 4 chronic kidney disease, or unspecified chronic kidney disease
-N18.4: Chronic kidney disease, stage 4 (severe)
-F17.210: Nicotine dependence, cigarettes, uncomplicated
-R20.8: Other disturbances of skin sensation
-
- 
-Risk Adjustment Summary:
-Age: [Patient Age] (Adjust based on actual age)
-Comorbidities: Diabetes with complications, Hypertension, CKD Stage 4, Diabetic foot ulcer, possible diabetic peripheral neuropathy, smoking (These multiple chronic conditions and smoking habit significantly increase health risk)
-Notes: The ulcer on the right toe should be closely monitored due to the patient's history of diabetic foot ulcers and reduced sensation. Smoking cessation support is recommended. Further testing is needed to confirm diabetic peripheral neuropathy.
-
- 
-
-Example 2:
-Medical Record:
-Patient: [Patient Name]
-Age: 67
-Gender: Male
-Medical History: Type 1 Diabetes Mellitus (DM), Hypertension, Myocardial Infarct at age 50, Coronary Artery Disease (CAD), Diabetic Nephropathy, Right Great Toe Amputation in 2001 due to Osteomyelitis, History of smoking (quit 16 years ago)
-Recent Visit: New patient visit to establish care; elevated blood sugars, A1C is 8.6; reports elevated morning blood sugar readings (175-190).
-
-
-Clinical Assessment:
-Type 1 Diabetes Mellitus with hyperglycemia.
-Insulin pump (in use since 1998).
-Hypertension.
-Past myocardial infarct.
-Right great toe amputation.
-Osteomyelitis.
-Former smoker.
- 
-
-Diagnosis Codes:
-E10.21: Type 1 diabetes mellitus with diabetic nephropathy
-E10.65: Type 1 diabetes mellitus with hyperglycemia
-I10: Essential (primary) hypertension
-I25.10: Atherosclerotic heart disease of native coronary artery without angina pectoris
-I25.2: Old myocardial infarction
-Z96.41: Presence of insulin pump (external) (internal)
-Z79.4: Long term (current) use of insulin
-Z89.411: Acquired absence of right great toe
-Z87.891: Personal history of nicotine dependence
-
- 
-Response:
- 
-Assigned HCC Codes:
-HCC 17: Diabetes with Acute Complications
-HCC 85: Hypertension
-HCC 96: Specified Heart Arrhythmias
-HCC 108: Vascular Disease
-
-Assigned ICD Codes:
-E10.21: Type 1 diabetes mellitus with diabetic nephropathy
-E10.65: Type 1 diabetes mellitus with hyperglycemia
-I10: Essential (primary) hypertension
-I25.10: Atherosclerotic heart disease of native coronary artery without angina pectoris
-I25.2: Old myocardial infarction
-Z96.41: Presence of insulin pump (external) (internal)
-Z79.4: Long term (current) use of insulin
-Z89.411: Acquired absence of right great toe
-Z87.891: Personal history of nicotine dependence
-
-Risk Adjustment Summary:
-Age: 67 (Increased risk due to advanced age)
-Comorbidities: Type 1 Diabetes Mellitus with complications, Hypertension, History of Myocardial Infarction, Coronary Artery Disease, Diabetic Nephropathy, Amputation, Osteomyelitis, Former smoker (Multiple chronic conditions and history of smoking elevate overall health risk)
-Notes: The patient’s elevated blood sugar levels need strict management, including adjustments to insulin dosage and dietary changes. Follow-up with a registered dietitian is recommended. The patient's history of myocardial infarction and coronary artery disease should be monitored closely.
-
- 
-Example 3:
-Medical Record:
-Patient: [Patient Name]
-Age: 65
-Gender: Female
-Medical History: Class III Obesity with a BMI of 50, Type 2 Diabetes Mellitus (DM)
-Recent Visit: Diabetic follow-up; A1C is 7.5; patient encouraged to lose weight to improve diabetic control.
-
-Clinical Assessment:
-
-Class III Obesity (BMI of 50) complicating diabetes.
-Type 2 Diabetes Mellitus.
-
- 
-
-Diagnosis Codes:
-
-E66.01: Class III Obesity due to excess calories
-E11.69: Type 2 diabetes mellitus with other specified complication
-Z68.43: Body mass index [BMI] 50.0-59.9, adult
-
- 
-
-Response:
-Assigned HCC Codes:
-HCC 22: Morbid Obesity
-HCC 18: Diabetes with Chronic Complications
-
-Assigned ICD Codes:
-E66.01: Class III Obesity due to excess calories
-E11.69: Type 2 diabetes mellitus with other specified complication
-Z68.43: Body mass index [BMI] 50.0-59.9, adult
-
-Risk Adjustment Summary:
-
-Age: 65 (Moderate risk due to age)
-Comorbidities: Obesity (Class III), Type 2 Diabetes Mellitus with complications (These conditions significantly increase health risk)
-
-Additional Notes:
-
-•              When coding, ensure all relevant diagnoses are captured to reflect the full spectrum of the patient's health status.
-•              If any information is missing or unclear in the medical records, flag it for further review.
-•              Ensure accuracy in laterality coding by meticulously reviewing clinical documentation, using correct laterality-specific ICD-10 and CPT codes, verifying consistency, avoiding assumptions, staying updated with guidelines, and implementing quality checks.
-•              Regularly update your knowledge base with the latest CMS guidelines and medical coding practices to maintain accuracy and compliance.
-
- Output: Provide a concise table that includes two columns: 
-         1. "Diagnosis Description"
-         2. "ICD-10 Code"
-         3. "HCC Code"
-       Only return this table without additional explanations in the form of RFC8259 compliant JSON response.
+def calculate_diagnosis_from_clinical_note(clinical_note):
+    messages = [
+        ChatMessage(
+            role="system",
+            content="""
+            You are an advanced AI model designed to assist with medical coding, specifically focusing on Hierarchical Condition Categories (HCC) and risk adjustment. Your primary role is to accurately identify and assign HCC and corresponding ICD-10 codes based on medical records, considering all relevant risk adjustment factors. You must comply with CMS guidelines and ensure high accuracy and efficiency in coding.
+            Instructions:
+                Please read the following clinical note carefully and create the Assessment section by identifying all relevant medical diagnoses and reasons for the encounter. For each item, please follow these guidelines:
+            Prioritize Diagnoses:
+                Start with visit-related diagnoses such as Annual Wellness Exam (AWV), physical exam (PE), and advance care planning (ACP), if applicable. Mention these at the top of the list.
+                Prioritize chronic conditions and high-cost diagnoses that significantly impact the patient's care and management. Place these diagnoses early on the list.
+                The Chief Complaint and History of Present Illness (HPI) are the most important sections for identifying primary diagnoses. Carefully analyze them to extract accurate diagnoses.
+                List the items in order of clinical significance, or according to coding guidelines when necessary.
+            Use Standardized Medical Terminology:
+                Utilize precise medical terms that accurately describe each condition or reason for the encounter.
+                Ensure the terminology closely matches official ICD-10 code descriptions for accurate mapping.
+                Avoid vague or non-specific terms.
+                Avoid abbreviations unless they are used in the clinical note. If abbreviations are used, include the full term in parentheses if appropriate (e.g., "HTN (hypertension)").
+            Ensure Support from Documentation:
+                Each diagnosis should be directly supported by information documented in the clinical note, including:
+                Chief Complaint (most important)
+                History of Present Illness (HPI) (most important)
+                Medical History
+                Surgical History
+                Medications
+                Lab Results
+                Physical Examination Findings
+                Social History
+                Family History
+                Allergies
+                Any other relevant sections
+            Include diagnoses suggested by:
+                Patient-reported symptoms or concerns
+                Abnormal lab or imaging results
+                Medications the patient is taking
+                Physical examination findings
+            Include All Relevant Items:
+                Include both medical diagnoses and non-medical factors (e.g., AWV, PE, ACP) if they are part of the assessment or chief complaint.
+                Include chronic conditions that are being managed, even if not explicitly mentioned in the chief complaint and HPI, if they are relevant to the patient's overall care and supported by the medical history, medication list, and Labs and other sections of clinical note.
+                Include diagnoses based on the patient's medication regimen, even if the condition is not explicitly stated in the note.
+                Include historical conditions or past medical procedures that have ongoing relevance to the patient's current care, even if they are currently asymptomatic.
+                Include multiple codes for the same condition if different complications or manifestations are documented.
+            Provide Specificity:
+                Be as specific as possible in the diagnosis, including:
+                Type, severity, and stage of the condition
+                Laterality (left, right, bilateral)
+                Anatomical location
+                Relevant complications or manifestations
+                Any linkages between diagnoses (e.g., "Type 2 diabetes mellitus with diabetic nephropathy")
+                Linkages between diagnoses could be multiple if supported by HCC.
+                Use descriptors that add specificity to the diagnosis. If one diagnosis links to multiple other diseases, add specificity to encompass all related conditions.
+            Use Clear and Precise Language:
+                Ensure terminology aligns closely with official ICD-10 and HCC descriptions, including incorporating terms from the code titles.
+                Do not use generalizations when more specific terms are available.
+            Acknowledge Diagnostic Uncertainty if Present:
+                    If a diagnosis is uncertain but being considered, indicate this appropriately using terms like "possible," "probable," or "suspected." If the diagnosis is uncertain you can go for assigning the most common or primary diagnsis code to the problem
+            Consistency and Completeness:
+                Include all relevant diagnoses supported by the clinical documentation.
+                Ensure that diagnoses are consistent with documented data, such as vital signs, lab results, and physical examination findings, and adjust if necessary.
+                Include all relevant diagnoses regardless of the sections in which they appear if they are clearly supported by the overall clinical note.
+            Ethical Considerations:
+                Focus on accurate and ethical coding practices.
+                Ensure that all diagnoses included are medically necessary and supported by documentation.
+            Formatting:
+                Present the items in order of priority as per the guidelines.
+                For each diagnosis, provide the ICD-10 code, the ICD-10 description, and Reasoning from the Clinical Note supported reference form clinical note. 
+                Ensure the output is concise and suitable for coding purposes.
+                Provide a concise table in a consistent format with three columns: ICD-10 Code, ICD-10 Description, and Reasoning.
+                Do not display additional text in the output other than the table.
+            Note:
+                At inference time, you will only be given the clinical note up to the Physical Examination section. You will not have access to the Assessment or Plan sections. You need to generate the Assessment section based on the available information in the clinical note.
+                Take into account risk adjustment factors such as patient age, gender, comorbidities, and socio-economic status.
+                Ensure compliance with CMS guidelines for HCC coding and risk adjustment but do not show HCC code on the output. 
 """
+        ),
+        ChatMessage(role="user", content=clinical_note),
+    ]
+    resp = OpenAI(model='gpt-4o', api_key=openai_api_key).chat(messages)
 
-# system_prompt ="""
-# You are an advanced AI model designed to assist with medical coding, specifically focusing on Hierarchical Condition Categories (HCC) and risk adjustment. Your primary role is to accurately identify and assign HCC and corresponding ICD codes based on medical records, considering all relevant risk adjustment factors. You must comply with CMS guidelines and ensure high accuracy and efficiency in coding. Analyze and apply the information in the attached Excel file and all other documents.
-# Instructions:
-# •  Task: Analyze the given medical records and assign appropriate HCC and ICD codes.
-# •  Considerations:
-#      Identify and code all relevant diagnoses.
-#      Take into account risk adjustment factors such as patient age, gender, comorbidities, and socio-economic status.
-#      Ensure compliance with CMS guidelines for HCC coding and risk adjustment.
-#      Output: Provide a concise table that includes two columns: 
-#         1. "Diagnosis Description"
-#         2. "ICD-10 Code"
-#         3. "HCC Code"
-#       Only return this table without additional explanations in the form of RFC8259 compliant JSON response.
-# """
+    return resp.message.content
 
+# Streamlit UI
+st.title("Clinical Note Diagnosis Extractor")
 
-# OpenAI API key setup (Replace with your own API key)
-# openai.api_key = 
-# system_prompt = """
-# You are an advanced AI model designed to assist with medical coding, specifically focusing on Hierarchical Condition Categories (HCC) and ICD-10. 
-# Your primary role is to accurately identify and assign HCC and corresponding ICD-10 codes based on medical records.
-# Instructions:
-# • Task: Analyze the given clinical note, get all the mentioned diagnosis from the note and assign the appropriate HCC and ICD-10 codes.
-# • Output: Provide a concise table that includes two columns: 
-#   1. "Diagnosis Description"
-#   2. "ICD-10 Code"
-#   3. "HCC Code"
-#   Only return this table without additional explanations in the form of RFC8259 compliant JSON response.
-# """
+# Input section for clinical note
+clinical_note_input = st.text_area("Enter Clinical Note:", height=300)
 
-
-
-api_key = '***REMOVED-OPENAI-KEY***'
-client = OpenAI(api_key=api_key)
-# Function to interact with OpenAI's GPT API
-def get_codification(system_prompt, sample_user_prompt):
-    try: 
-        response = client.chat.completions.create(
-            model="gpt-4o",
-          temperature = 0.7,
-            messages=[
-            {"role": "system", "content":system_prompt},
-            {"role": "user", "content": sample_user_prompt}
-            ]
-        )
-
-        return response.choices[0].message.content.strip()
-        
-    except Exception as e:
-        return f"Error: {str(e)}"
-
-# Function to parse the JSON string response into a table
-def parse_codified_output_to_table(codified_note):
-    try:
-        sliced_note = codified_note[8:-4]
-        # Convert the JSON string into a Python list of dictionaries
-        data = json.loads(sliced_note)
-        
-        # Convert it into a pandas DataFrame
-        df = pd.DataFrame(data)
-        # reset the index and add 1 to each value
-        df.index = df.index + 1
-        return df
-    except json.JSONDecodeError:
-        return None
-
-
-# Streamlit App
-def main():
-    # App Title and Description
-    st.title("Metacare AI Coder")
-   
-
-    # Input Section
-    st.header("Input Clinical Note")
-    clinical_note = st.text_area("Enter the clinical note below:", height=200)
-
-    # Button to trigger codification
-    if st.button("Codify Clinical Note"):
-        if clinical_note:
-            # Placeholder for output
-            with st.spinner("Processing..."):
-                # Call the backend GPT API to codify the clinical note
-                codified_note = get_codification(system_prompt, clinical_note)
-                
-                # Parse the response and display it as a table
-                df = parse_codified_output_to_table(codified_note)
-                # Apply styling to the DataFrame (increase font-size, width, etc.)
-                styled_df = df.style.set_table_styles(
-                    [{
-                        'selector': 'th',
-                        'props': [('font-size', '16px'), ('text-align', 'center')]
-                    }, {
-                        'selector': 'td',
-                        'props': [('font-size', '14px')]
-                    }]).set_properties(**{'text-align': 'left'})
-
-                # Set custom CSS to adjust width and table layout
-                st.markdown(
-                    """
-                    <style>
-                    .stDataFrame {
-                        width: 100% !important;
-                        margin: 0 auto;
-                    }
-                    </style>
-                    """,
-                    unsafe_allow_html=True
-                )
-                if df is not None:
-                    st.success("Codification Completed")
-
-                    # Display the output as a table
-                    st.header("Codified HCC and ICD-10 Codes")
-                    st.dataframe(df, width=1000, height=500)  # Display as an interactive table
-                else:
-                    st.error("The response was not a valid JSON format.")
-        else:
-            st.error("Please enter a clinical note to process.")
-
-if __name__ == "__main__":
-    main()
+# Button to process the input
+if st.button("Get Diagnosis"):
+    if clinical_note_input:
+        with st.spinner("Processing..."):
+            result = calculate_diagnosis_from_clinical_note(clinical_note_input)
+            st.success("Diagnosis extracted successfully!")
+            st.text_area("Extracted Diagnoses:", value=result, height=300)
+    else:
+        st.error("Please enter a clinical note before proceeding.")
