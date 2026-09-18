@@ -1,0 +1,30 @@
+[project]
+name = "hcc-codifier"
+version = "0.1.0"
+description = "A Streamlit app that extracts an HCC/ICD-10 assessment table from a clinical note using an LLM."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Hamza Munir" }]
+dependencies = [
+    "streamlit>=1.38,<2",
+    "llama-index-core>=0.11,<0.15",
+    "llama-index-llms-openai>=0.2,<0.9",
+    "python-dotenv>=1.0,<2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.6"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+src = ["src"]
